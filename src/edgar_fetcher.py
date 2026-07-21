@@ -16,13 +16,16 @@ extraction, ratios, or Excel. Those belong to later phases.
 User-Agent
 ------------------------------------------------------------------------------
 SEC requires a descriptive User-Agent identifying the requester on EVERY
-request, e.g. "Devansh M <my-email>". The default below uses a real contact so
-the fetcher is SEC-compliant out of the box, but you can override it.
+request, e.g. "Your Name your.email@example.com".
 
-  >>> REPLACE THE EMAIL if you want a different contact:
-      - edit DEFAULT_USER_AGENT below, OR
-      - set the environment variable SEC_USER_AGENT, e.g.
-          export SEC_USER_AGENT="Your Name your-email@example.com"
+The User-Agent is read from the SEC_USER_AGENT environment variable. If it is
+not set, a safe placeholder is used and the fetcher warns you to set a real
+contact before making live SEC requests (SEC may throttle/deny requests that
+carry the placeholder).
+
+  >>> SET YOUR CONTACT before running live requests:
+      export SEC_USER_AGENT="Your Name your.email@example.com"   # macOS/Linux
+      $env:SEC_USER_AGENT="Your Name your.email@example.com"     # Windows PS
 
 ------------------------------------------------------------------------------
 Rate limiting
@@ -46,8 +49,11 @@ import requests
 
 
 # --- User-Agent ---------------------------------------------------------------
-# >>> REPLACE THE EMAIL HERE (or via the SEC_USER_AGENT env var) <<<
-DEFAULT_USER_AGENT = "Devansh M your.email@example.com"
+# Safe placeholder used ONLY when SEC_USER_AGENT is not set. No real personal
+# contact is committed to the repo — set SEC_USER_AGENT to your own before
+# making live SEC requests.
+PLACEHOLDER_USER_AGENT = "Your Name your.email@example.com"
+SEC_USER_AGENT_ENV = "SEC_USER_AGENT"
 
 # --- SEC endpoints ------------------------------------------------------------
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -130,9 +136,14 @@ class EdgarFetcher:
     ) -> None:
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.user_agent = user_agent or os.environ.get(
-            "SEC_USER_AGENT", DEFAULT_USER_AGENT
-        )
+
+        # Resolve the User-Agent: explicit arg > SEC_USER_AGENT env var >
+        # safe placeholder. `using_placeholder` lets callers warn the user
+        # before they make live SEC requests with a non-descriptive UA.
+        resolved = user_agent or os.environ.get(SEC_USER_AGENT_ENV)
+        self.using_placeholder = not bool(resolved)
+        self.user_agent = resolved or PLACEHOLDER_USER_AGENT
+
         self.min_interval_s = min_interval_s
         self.timeout_s = timeout_s
 

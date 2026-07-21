@@ -8,7 +8,9 @@ latest-10-K selection can be verified even when SEC hosts are unreachable.
 Run:  python tests/test_edgar_logic_offline.py
 """
 
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -61,8 +63,14 @@ def check(name: str, cond: bool) -> None:
 
 
 def main() -> int:
-    tmp = Path("data/_test_tmp")
-    tmp.mkdir(parents=True, exist_ok=True)
+    tmp = Path(tempfile.mkdtemp(prefix="edgar_offline_test_"))
+    try:
+        return _run(tmp)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _run(tmp: Path) -> int:
     f = _new_fetcher(tmp)
 
     print("zero_pad_cik:")

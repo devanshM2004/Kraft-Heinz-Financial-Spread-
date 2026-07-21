@@ -39,6 +39,16 @@ def main() -> int:
 
     fetcher = EdgarFetcher(out_dir=args.out_dir, user_agent=args.user_agent)
     print(f"[phase0] SEC User-Agent: {fetcher.user_agent}")
+    if fetcher.using_placeholder:
+        print(
+            "[phase0] WARNING: SEC_USER_AGENT is not set, using a placeholder.\n"
+            "         SEC asks for a descriptive User-Agent with a real contact\n"
+            "         and may throttle or deny placeholder requests. Set it before\n"
+            "         making live SEC requests:\n"
+            '           macOS/Linux : SEC_USER_AGENT=\"Your Name your.email@example.com\" python run_phase0.py\n'
+            '           Windows PS  : $env:SEC_USER_AGENT=\"Your Name your.email@example.com\"; python run_phase0.py\n',
+            file=sys.stderr,
+        )
     print(f"[phase0] Acquiring filings for {args.ticker.upper()} ...\n")
 
     try:

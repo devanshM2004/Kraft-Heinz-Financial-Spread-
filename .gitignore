@@ -220,3 +220,6 @@ __marimo__/
 # Fetched raw SEC artifacts (large, reproducible)
 /data/raw/*
 !/data/raw/.gitkeep
+
+# Offline-test scratch output
+/data/_test_tmp/

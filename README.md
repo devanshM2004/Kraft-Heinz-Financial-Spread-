@@ -59,12 +59,20 @@ It does **not** call the Anthropic API or do any extraction/mapping.
 
 ### SEC compliance
 
-- **User-Agent** is sent on *every* request (SEC requires it). The default is
-  `Devansh M your.email@example.com`.
-  **To change the contact email**, edit `DEFAULT_USER_AGENT` in
-  `src/edgar_fetcher.py`, or set the env var:
+- **User-Agent** is sent on *every* request (SEC requires it). It is read from
+  the `SEC_USER_AGENT` environment variable. **No personal contact is committed
+  to the repo** — if `SEC_USER_AGENT` is unset, the code falls back to the
+  placeholder `Your Name your.email@example.com` and prints a warning telling
+  you to set a real contact before making live SEC requests.
+
+  Set it to your own name and email before running live:
   ```bash
-  export SEC_USER_AGENT="Your Name your-email@example.com"
+  # macOS / Linux
+  SEC_USER_AGENT="Devansh M your.email@example.com" python run_phase0.py
+  ```
+  ```powershell
+  # Windows PowerShell
+  $env:SEC_USER_AGENT="Devansh M your.email@example.com"; python run_phase0.py
   ```
 - **Rate limiting**: a minimum interval between requests (0.15s ≈ 6.7 req/s)
   keeps us safely below SEC's ~10 req/s ceiling.
