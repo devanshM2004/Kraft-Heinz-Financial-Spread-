@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Fetched raw SEC artifacts (large, reproducible)
+/data/raw/*
+!/data/raw/.gitkeep

@@ -1,0 +1,22 @@
+# Kraft Heinz Financial Spread Builder — dependencies
+#
+# Phase 0 (data acquisition) needs ONLY `requests`.
+# The remaining packages are listed now so the environment is ready for later
+# phases, but they are not imported by the Phase 0 code path.
+
+# --- Phase 0: EDGAR data acquisition ---
+requests>=2.31
+
+# --- Phase 2+: filing parsing ---
+pdfplumber>=0.11         # text-based PDF extraction
+beautifulsoup4>=4.12     # HTML filing table parsing
+lxml>=5.0                # fast HTML/XML parser backend for bs4
+
+# --- Phase 3/6: LLM extraction + vision ---
+anthropic>=0.40          # Claude API (extraction / mapping / vision)
+
+# --- Phase 5: Excel output ---
+openpyxl>=3.1
+
+# --- Optional backup ground-truth source (SEC XBRL is preferred) ---
+yfinance>=0.2
