@@ -7,6 +7,9 @@
 # --- Phase 0: EDGAR data acquisition ---
 requests>=2.31
 
+# --- Phase 1: schema + strict JSON contract validation ---
+jsonschema>=4.20
+
 # --- Phase 2+: filing parsing ---
 pdfplumber>=0.11         # text-based PDF extraction
 beautifulsoup4>=4.12     # HTML filing table parsing
