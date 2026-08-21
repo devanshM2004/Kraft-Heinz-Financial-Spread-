@@ -38,34 +38,49 @@ Audit fields (all requested, in the record):
 | `raw_label` | extraction | verbatim label from the filing |
 | `standardized_category` | **model** | the only model-derived field |
 | `fiscal_year` | extraction | e.g. `"2024"` |
+| `period_label` | extraction | human-friendly, e.g. `"FY2024"` |
 | `confidence` | **model** | inherited from the mapping decision |
 | `source_table_index` | extraction | provenance |
 | `source_row_index` | extraction | provenance |
+| `source_column_index` | extraction | which period column the value came from |
 | `source_location` | extraction | human-readable pointer |
+| `source_scale` | extraction | `units`/`thousands`/`millions`/… as the table reports |
+| `currency` | extraction | e.g. `"USD"`, when known |
 | `notes` | any | free-form |
 
-**Recommended additions** (Python-owned; flagged for your approval):
+**Two numeric fields — source is preserved separately from calculation:**
 
-| field | why |
-|---|---|
-| `value` | the number itself, bound by Python from the source cell |
-| `value_is_present` | distinguishes a real `0` from a blank / "—" cell |
-| `source_column_index` | which period column the value came from (true cell-level trace) |
+| field | source | notes |
+|---|---|---|
+| `source_value` | **Python (extraction)** | the figure **exactly as displayed** in the filing after deterministic parsing — **not** sign-adjusted |
+| `calculation_value` | **Python (normalization)** | signed value used for footing/ratios; may differ in sign from `source_value` |
+| `value_is_present` | **Python** | distinguishes a real `0` from a blank / "—" cell |
 
 > The only field in a `SpreadItem` that originates from the LLM is
-> `standardized_category` (and the `confidence` flag on it). Everything numeric
-> and every source reference is produced deterministically by Python. Any output
+> `standardized_category` (and the `confidence` flag on it). Every number and
+> every source reference is produced deterministically by Python. Any output
 > number can be walked back to `source_table_index / source_row_index /
 > source_column_index`.
 
-## Sign convention
+## Source value vs. calculation value
 
-Values are stored **signed so that every subtotal equals the plain arithmetic
-sum of its `foots_from` components.** Expenses and contra accounts are therefore
-**negative** (e.g. `cost_of_goods_sold = -17000`, so
-`revenue + cost_of_goods_sold = gross_profit`). This makes subtotal footing a
-pure sum in Phase 4. Ratio formulas that intend a positive debt-service figure
-(e.g. DSCR) take magnitudes in the compute layer.
+The audit trail must preserve the source figure **exactly as extracted**. So the
+record keeps two numbers:
+
+- **`source_value`** — the figure as the filing displays it after deterministic
+  parsing. It is **never** sign-flipped to make a formula convenient. If the
+  income statement shows COGS as a positive `17,000`, `source_value = 17000`.
+- **`calculation_value`** — the Python-normalized, signed value used so that a
+  subtotal equals the plain arithmetic sum of its `foots_from` components (COGS
+  becomes `-17000`, so `revenue + cost_of_goods_sold = gross_profit`). Derived
+  deterministically by Python from `source_value` and the standardized category
+  — **never** by Claude.
+
+The Excel output (Phase 5) can show either or both. Ratio formulas that intend a
+positive debt-service figure (e.g. DSCR) take magnitudes in the compute layer.
+`source_scale` records the table's reported scale (thousands/millions); values
+are stored **as displayed** — the scale is metadata, not applied to the stored
+figure.
 
 ## Standardized categories
 

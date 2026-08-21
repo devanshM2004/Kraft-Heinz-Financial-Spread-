@@ -33,6 +33,7 @@ from core.schema import (
     MAPPING_OUTPUT_SCHEMA,
     MappingDecision,
     RATIO_SPECS,
+    SourceScale,
     SpreadItem,
     StandardizedCategory,
     StatementType,
@@ -151,11 +152,14 @@ def test_round_trips() -> None:
     check("MappingDecision round-trips", MappingDecision.from_dict(d.to_dict()) == d)
 
     it = SpreadItem(
-        row_id="r01", statement_type=StatementType.INCOME_STATEMENT,
-        raw_label="Net sales", standardized_category=StandardizedCategory.REVENUE,
-        fiscal_year="2024", confidence=Confidence.HIGH, value=26000.0,
-        source_table_index=2, source_row_index=0, source_column_index=1,
-        source_location="Income Statement, table 2, row 0, col 2024",
+        row_id="r02", statement_type=StatementType.INCOME_STATEMENT,
+        raw_label="Cost of products sold",
+        standardized_category=StandardizedCategory.COST_OF_GOODS_SOLD,
+        fiscal_year="2024", period_label="FY2024", confidence=Confidence.HIGH,
+        source_value=17000.0, calculation_value=-17000.0,
+        source_scale=SourceScale.MILLIONS, currency="USD",
+        source_table_index=2, source_row_index=1, source_column_index=1,
+        source_location="Income Statement, table 2, row 1, col 2024",
     )
     check("SpreadItem round-trips", SpreadItem.from_dict(it.to_dict()) == it)
 
@@ -164,25 +168,44 @@ def test_round_trips() -> None:
 def test_example_math() -> None:
     print("synthetic example integrity (Python owns math):")
     data = json.loads((EXAMPLES / "example_spread_items.json").read_text())
-    # value by (category, fiscal_year)
-    v: dict[tuple[str, str], float] = {}
+    # calculation_value and source_value by (category, fiscal_year)
+    calc: dict[tuple[str, str], float] = {}
+    src: dict[tuple[str, str], float] = {}
     for it in data["items"]:
-        v[(it["standardized_category"], it["fiscal_year"])] = it["value"]
+        key = (it["standardized_category"], it["fiscal_year"])
+        calc[key] = it["calculation_value"]
+        src[key] = it["source_value"]
 
     def g(cat: StandardizedCategory, year="2024") -> float:
-        return v.get((cat.value, year), 0.0)
+        return calc.get((cat.value, year), 0.0)
 
     SC = StandardizedCategory
-    # Foot a couple of subtotals from their components (signed additive).
-    check("gross_profit foots", g(SC.GROSS_PROFIT) == g(SC.REVENUE) + g(SC.COST_OF_GOODS_SOLD))
-    check("total_current_assets foots",
+    # Foot subtotals from their components using CALCULATION values (signed).
+    check("gross_profit foots (calc)",
+          g(SC.GROSS_PROFIT) == g(SC.REVENUE) + g(SC.COST_OF_GOODS_SOLD))
+    check("operating_income foots (calc)",
+          g(SC.OPERATING_INCOME) == g(SC.GROSS_PROFIT) + g(SC.SELLING_GENERAL_ADMIN))
+    check("net_income foots (calc)",
+          g(SC.NET_INCOME) == g(SC.INCOME_BEFORE_TAXES) + g(SC.INCOME_TAX_EXPENSE))
+    check("total_current_assets foots (calc)",
           g(SC.TOTAL_CURRENT_ASSETS)
           == g(SC.CASH_AND_EQUIVALENTS) + g(SC.ACCOUNTS_RECEIVABLE) + g(SC.INVENTORY))
     # Balance sheet balances.
-    check("assets == liabilities + equity",
+    check("assets == liabilities + equity (calc)",
           g(SC.TOTAL_ASSETS) == g(SC.TOTAL_LIABILITIES) + g(SC.TOTAL_EQUITY))
-    check("total_liabilities_and_equity == total_assets",
+    check("total_liabilities_and_equity == total_assets (calc)",
           g(SC.TOTAL_LIABILITIES_AND_EQUITY) == g(SC.TOTAL_ASSETS))
+
+    # Source preservation: COGS source stays the positive filing figure while
+    # its calculation value is negated — the audit trail keeps both.
+    cogs_key = (SC.COST_OF_GOODS_SOLD.value, "2024")
+    check("COGS source_value preserved as displayed (+17000)", src[cogs_key] == 17000.0)
+    check("COGS calculation_value normalized (-17000)", calc[cogs_key] == -17000.0)
+    # For non-expense lines, source and calc agree (no spurious sign flip).
+    rev_key = (SC.REVENUE.value, "2024")
+    check("revenue source == calc (no flip)", src[rev_key] == calc[rev_key] == 26000.0)
+    ta_key = (SC.TOTAL_ASSETS.value, "2024")
+    check("total_assets source == calc (no flip)", src[ta_key] == calc[ta_key] == 50000.0)
 
 
 def main() -> int:

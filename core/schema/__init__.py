@@ -40,6 +40,8 @@ from .records import (
     MappingDecision,
     SpreadItem,
     StandardizedSpread,
+    SourceScale,
+    SCALE_MULTIPLIER,
 )
 from .status import (
     Confidence,
@@ -72,6 +74,8 @@ __all__ = [
     "MappingDecision",
     "SpreadItem",
     "StandardizedSpread",
+    "SourceScale",
+    "SCALE_MULTIPLIER",
     # mapping contract
     "MAPPING_OUTPUT_SCHEMA",
     "build_mapping_output_schema",

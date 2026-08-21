@@ -12,11 +12,16 @@ The numbers below are SYNTHETIC and intentionally round. They are illustrative
 only — not Kraft Heinz's real figures. The balance sheet is constructed to
 balance and the income statement to foot, so later phases have a clean example.
 
-Sign convention (important, documented in docs/schema.md):
-  Values are stored SIGNED so that every subtotal equals the plain arithmetic
-  sum of its `foots_from` components. Expenses and contra accounts are therefore
-  negative (e.g. cost_of_goods_sold = -17000). Ratio formulas that intend a
-  positive debt-service figure take magnitudes in the compute layer (Phase 4).
+Source vs. calculation values (documented in docs/schema.md):
+  source_value      -- the figure EXACTLY as displayed in the filing after
+                       deterministic parsing. NOT sign-adjusted. Expenses like
+                       COGS appear as the positive 17000 the statement shows.
+  calculation_value -- the Python-normalized signed value used for subtotal
+                       footing and ratios (COGS becomes -17000 so a subtotal is
+                       the plain sum of its components). Derived by Python only.
+
+The sign flip below (CALC_NEGATE) is illustrative of the Phase-4 normalization;
+Phase 1 just demonstrates the two fields co-existing on the audit record.
 """
 
 from __future__ import annotations
@@ -31,6 +36,7 @@ sys.path.insert(0, str(HERE.parent))
 from core.schema import (  # noqa: E402
     Confidence,
     MappingDecision,
+    SourceScale,
     SpreadItem,
     StandardizedCategory as SC,
     StandardizedSpread,
@@ -103,21 +109,22 @@ ROWS = [
      SC.IGNORE, ST.NONE, HIGH, "Narrative footnote, not a data row.", 3, 16),
 ]
 
-# Synthetic signed values by row_id: {fiscal_year: value}. Expenses negative.
-VALUES = {
+# Synthetic SOURCE values by row_id: {fiscal_year: value_as_displayed}.
+# These are the magnitudes a filing would show (expenses shown positive).
+SOURCE_VALUES = {
     # income statement
     "r01": {"2024": 26000.0, "2023": 25000.0},   # revenue
-    "r02": {"2024": -17000.0},                    # cogs
-    "r03": {"2024": 9000.0},                      # gross profit (26000-17000)
-    "r04": {"2024": -5000.0},                     # sg&a
-    "r05": {"2024": 4000.0},                      # operating income (9000-5000)
-    "r06": {"2024": -600.0},                      # interest expense
-    "r07": {"2024": 3400.0},                      # pre-tax (4000-600)
-    "r08": {"2024": -900.0},                      # tax
-    "r09": {"2024": 2500.0},                      # net income (3400-900)
+    "r02": {"2024": 17000.0},                     # cogs (displayed positive)
+    "r03": {"2024": 9000.0},                      # gross profit
+    "r04": {"2024": 5000.0},                      # sg&a (displayed positive)
+    "r05": {"2024": 4000.0},                      # operating income
+    "r06": {"2024": 600.0},                       # interest expense (displayed positive)
+    "r07": {"2024": 3400.0},                      # pre-tax
+    "r08": {"2024": 900.0},                       # tax (displayed positive)
+    "r09": {"2024": 2500.0},                      # net income
     "r10": {"2024": 1500.0},                      # D&A
     "r11": {"2024": 0.0},                         # other, net (unmapped)
-    # balance sheet
+    # balance sheet (all displayed positive)
     "r20": {"2024": 1000.0},                      # cash
     "r21": {"2024": 2000.0},                      # AR
     "r22": {"2024": 3000.0},                      # inventory
@@ -135,6 +142,18 @@ VALUES = {
     "r34": {"2024": 20000.0},                     # total equity
     "r35": {"2024": 50000.0},                     # total liab + equity
     "r36": {},                                    # ignored row, no value
+}
+
+# Categories whose calculation_value flips sign vs. the displayed source value
+# (expense/contra lines on the income statement). Illustrative of Phase-4
+# normalization; the real rule lives in the compute layer.
+CALC_NEGATE = {
+    SC.COST_OF_GOODS_SOLD,
+    SC.SELLING_GENERAL_ADMIN,
+    SC.RESEARCH_DEVELOPMENT,
+    SC.OTHER_OPERATING_EXPENSE,
+    SC.INTEREST_EXPENSE,
+    SC.INCOME_TAX_EXPENSE,
 }
 
 COL_BY_YEAR = {"2024": 1, "2023": 2}  # column 0 is the label column
@@ -160,17 +179,20 @@ def build_spread_items() -> dict:
         ticker="KHC",
         company_name="(synthetic example — not real Kraft Heinz data)",
         source_document="example_synthetic_filing.html",
+        reporting_currency="USD",
         fiscal_years=["2024", "2023"],
     )
     for (row_id, label, cat, stmt, conf, _rationale, ti, ri) in ROWS:
-        year_values = VALUES.get(row_id, {})
+        year_values = SOURCE_VALUES.get(row_id, {})
         if not year_values:
             continue  # ignored / no-data rows produce no bound figures
         stmt_label = {"income_statement": "Income Statement",
                       "balance_sheet": "Balance Sheet",
                       "none": "n/a"}[stmt.value]
-        for year, value in year_values.items():
+        for year, source_value in year_values.items():
             col = COL_BY_YEAR[year]
+            # calculation_value: Python normalizes the sign deterministically.
+            calc_value = -source_value if cat in CALC_NEGATE else source_value
             spread.items.append(
                 SpreadItem(
                     row_id=row_id,
@@ -178,9 +200,13 @@ def build_spread_items() -> dict:
                     raw_label=label,
                     standardized_category=cat,
                     fiscal_year=year,
+                    period_label=f"FY{year}",
                     confidence=conf,
-                    value=value,
+                    source_value=source_value,       # as displayed
+                    calculation_value=calc_value,    # Python-normalized
                     value_is_present=True,
+                    source_scale=SourceScale.MILLIONS,
+                    currency="USD",
                     source_table_index=ti,
                     source_row_index=ri,
                     source_column_index=col,
