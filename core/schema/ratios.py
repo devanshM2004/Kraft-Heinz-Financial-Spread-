@@ -124,6 +124,21 @@ RATIO_SPECS: tuple[RatioSpec, ...] = (
         ),
     ),
     RatioSpec(
+        name="ebitda_margin",
+        display_name="EBITDA margin (approximate)",
+        definition="EBITDA / revenue",
+        required_categories=(SC.REVENUE,),
+        required_derived=("ebitda",),
+        is_approximation=True,
+        notes="EBITDA is approximated; see EBITDA derived-quantity definition.",
+    ),
+    RatioSpec(
+        name="net_margin",
+        display_name="Net margin",
+        definition="net_income / revenue",
+        required_categories=(SC.NET_INCOME, SC.REVENUE),
+    ),
+    RatioSpec(
         name="revenue_growth",
         display_name="Revenue growth (YoY)",
         definition="(revenue_t / revenue_prior) - 1",

@@ -38,6 +38,8 @@ from core.mapping import (  # noqa: E402
     is_api_key_available,
 )
 from core.schema import ALLOWED_CATEGORY_VALUES  # noqa: E402
+from core.compute import compute_spread  # noqa: E402
+from core.schema import Severity  # noqa: E402
 
 st.set_page_config(page_title="Credit Spread Builder — Extraction", layout="wide")
 
@@ -195,6 +197,88 @@ def ai_mapping_review(doc: RawDocument) -> None:
                 st.write(f"- **{f.severity.value}** · {f.code.value} — {f.message}")
 
 
+def deterministic_calculations(doc: RawDocument) -> None:
+    st.divider()
+    st.subheader("4 · Deterministic Calculations & Validation")
+    st.write(
+        "All numbers, ratios, and checks below are computed in Python from the "
+        "extracted source values — Claude is not involved. `source_value` is "
+        "preserved exactly; `calculation_value` is the sign-normalized figure "
+        "used for the math."
+    )
+
+    result = st.session_state.get("mapping_result")
+    inc = st.session_state.get("selected_income_table")
+    bal = st.session_state.get("selected_balance_table")
+    if result is None or inc is None or bal is None or inc == bal:
+        st.info("Run AI mapping above (with distinct statements selected) to enable "
+                "deterministic calculations.")
+        return
+
+    decisions_by_id = {d.row_id: d for d in result.decisions}
+    compute = compute_spread(doc.tables[inc], doc.tables[bal], decisions_by_id)
+
+    # Validation summary.
+    summ = compute.validation_summary()
+    s1, s2, s3, s4 = st.columns(4)
+    s1.metric("Validation", "PASS" if summ["passed"] else "FAIL")
+    s2.metric("Errors", summ["n_errors"])
+    s3.metric("Warnings", summ["n_warnings"])
+    s4.metric("Info", summ["n_info"])
+    if summ["passed"]:
+        st.success("No blocking validation errors. Review warnings below before export.")
+    else:
+        st.error("Validation found blocking errors — see the balance / footing "
+                 "findings below. Numbers are NOT auto-corrected.")
+
+    # Ratios by period.
+    st.markdown("**Ratios by period**")
+    ratios_by_period = compute.ratios_by_period()
+    ordered_names = ["current_ratio", "debt_to_equity", "debt_to_ebitda",
+                     "ebitda_margin", "net_margin", "approximate_dscr", "revenue_growth"]
+    display_names = {}
+    rows = []
+    for name in ordered_names:
+        row = {"ratio": name}
+        for period in compute.periods:
+            rv = ratios_by_period.get(period, {}).get(name)
+            if rv is None:
+                row[period] = "—"
+            elif rv.status == "ok":
+                row[period] = round(rv.value, 4)
+                display_names[name] = rv.display_name
+            else:
+                row[period] = "not calculated"
+                display_names[name] = rv.display_name
+        row["ratio"] = display_names.get(name, name)
+        rows.append(row)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.caption("DSCR is an **approximate** estimate (EBITDA / (interest expense + "
+               "current portion of LTD)); it is not a bank-quality/CFADS DSCR. "
+               "Missing inputs show 'not calculated'.")
+
+    # Findings grouped by severity.
+    st.markdown("**Validation findings**")
+    if not compute.findings:
+        st.success("No findings.")
+    else:
+        buckets = {Severity.ERROR: [], Severity.WARNING: [], Severity.INFO: []}
+        for f in compute.findings:
+            buckets[f.severity].append(f)
+        for sev, emoji in ((Severity.ERROR, "🔴"), (Severity.WARNING, "🟠"),
+                           (Severity.INFO, "🔵")):
+            fs = buckets[sev]
+            if not fs:
+                continue
+            with st.expander(f"{emoji} {sev.value.title()} ({len(fs)})",
+                             expanded=(sev == Severity.ERROR)):
+                for f in fs:
+                    line = f"**{f.code.value}**"
+                    if f.fiscal_year:
+                        line += f" · {f.fiscal_year}"
+                    st.write(f"- {line} — {f.message}")
+
+
 def main() -> None:
     st.title("Credit Spread Builder")
     st.caption("Phase 2 — deterministic extraction & preview. No AI mapping, "
@@ -242,11 +326,11 @@ def main() -> None:
 
     statement_pickers(doc)
     ai_mapping_review(doc)
+    deterministic_calculations(doc)
 
     st.divider()
     st.caption(
-        "Next phases (not built yet): Python computes ratios & validations "
-        "(balance-sheet balance, subtotal footing, DSCR), then export to Excel. "
+        "Next phase (not built yet): export the reviewed spread to Excel. "
         "Numbers are always Python-owned; Claude only classifies."
     )
 
