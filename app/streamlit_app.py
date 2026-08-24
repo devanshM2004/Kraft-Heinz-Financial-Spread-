@@ -30,6 +30,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.ingest import extract_document  # noqa: E402
 from core.ingest.models import RawDocument, RawTable, SourceFormat  # noqa: E402
+from core.mapping import (  # noqa: E402
+    ClaudeMapper,
+    MappingError,
+    MissingAPIKeyError,
+    build_mapping_inputs,
+    is_api_key_available,
+)
+from core.schema import ALLOWED_CATEGORY_VALUES  # noqa: E402
 
 st.set_page_config(page_title="Credit Spread Builder — Extraction", layout="wide")
 
@@ -100,6 +108,84 @@ def statement_pickers(doc: RawDocument) -> None:
         st.session_state["selected_balance_table"] = bal
 
 
+def ai_mapping_review(doc: RawDocument) -> None:
+    st.divider()
+    st.subheader("3 · AI Mapping Review")
+    st.write(
+        "Claude classifies each raw row into a standardized category. It only "
+        "chooses a category — it never returns, creates, or adjusts a number. "
+        "All values shown here come from Python's deterministic extraction."
+    )
+
+    inc = st.session_state.get("selected_income_table")
+    bal = st.session_state.get("selected_balance_table")
+    if inc is None or bal is None or inc == bal:
+        st.info("Select distinct Income Statement and Balance Sheet tables above "
+                "to enable AI mapping.")
+        return
+
+    if not is_api_key_available():
+        st.warning(
+            "**ANTHROPIC_API_KEY is not set**, so AI mapping is disabled. "
+            "Set it and rerun:\n\n"
+            "```bash\nexport ANTHROPIC_API_KEY=\"sk-ant-...\"\nstreamlit run app/streamlit_app.py\n```\n\n"
+            "The key is read from the environment only — it is never stored or "
+            "committed."
+        )
+        return
+
+    if st.button("Run AI mapping", type="primary"):
+        inputs = build_mapping_inputs(doc.tables[inc], doc.tables[bal])
+        try:
+            mapper = ClaudeMapper.from_env()
+            with st.spinner(f"Mapping {len(inputs)} rows with Claude…"):
+                result = mapper.map(inputs)
+            st.session_state["mapping_result"] = result
+        except MissingAPIKeyError as exc:
+            st.error(str(exc))
+            return
+        except MappingError as exc:
+            st.error(f"Mapping failed: {exc}")
+            details = getattr(exc, "details", None)
+            if details:
+                st.code("\n".join(details))
+            return
+
+    result = st.session_state.get("mapping_result")
+    if result is None:
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows mapped", len(result.review_rows))
+    c2.metric("Unmapped", result.n_unmapped)
+    c3.metric("Low confidence", result.n_low_confidence)
+    c4.metric("Model", result.model_used or "—")
+
+    df = pd.DataFrame([r.to_dict() for r in result.review_rows])
+    st.caption(
+        "Suggested mappings — review below. You can override the "
+        "`standardized_category` in-place; full edit persistence lands in a "
+        "later phase."
+    )
+    st.data_editor(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "standardized_category": st.column_config.SelectboxColumn(
+                "standardized_category", options=ALLOWED_CATEGORY_VALUES,
+            ),
+        },
+        disabled=[c for c in df.columns if c != "standardized_category"],
+        key="mapping_editor",
+    )
+
+    if result.findings:
+        with st.expander(f"Review flags ({len(result.findings)})"):
+            for f in result.findings:
+                st.write(f"- **{f.severity.value}** · {f.code.value} — {f.message}")
+
+
 def main() -> None:
     st.title("Credit Spread Builder")
     st.caption("Phase 2 — deterministic extraction & preview. No AI mapping, "
@@ -146,12 +232,13 @@ def main() -> None:
             render_table(t)
 
     statement_pickers(doc)
+    ai_mapping_review(doc)
 
     st.divider()
     st.caption(
-        "Next phases (not built yet): Claude maps raw rows → standardized "
-        "categories (classification only), Python computes ratios & validations, "
-        "you review, then export to Excel."
+        "Next phases (not built yet): Python computes ratios & validations "
+        "(balance-sheet balance, subtotal footing, DSCR), then export to Excel. "
+        "Numbers are always Python-owned; Claude only classifies."
     )
 
 
