@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 import streamlit as st
@@ -39,7 +40,8 @@ from core.mapping import (  # noqa: E402
 )
 from core.schema import ALLOWED_CATEGORY_VALUES  # noqa: E402
 from core.compute import compute_spread  # noqa: E402
-from core.schema import Severity  # noqa: E402
+from core.schema import Severity, StandardizedCategory  # noqa: E402
+from core.review import ReviewState  # noqa: E402
 
 st.set_page_config(page_title="Credit Spread Builder — Extraction", layout="wide")
 
@@ -143,6 +145,9 @@ def ai_mapping_review(doc: RawDocument) -> None:
             with st.spinner(f"Mapping {len(inputs)} rows with Claude…"):
                 result = mapper.map(inputs)
             st.session_state["mapping_result"] = result
+            st.session_state["review_state"] = ReviewState.from_mapping_result(result)
+            st.session_state["review_editor_nonce"] = \
+                st.session_state.get("review_editor_nonce", 0) + 1
         except MissingAPIKeyError as exc:
             st.error(str(exc))
             return
@@ -154,47 +159,111 @@ def ai_mapping_review(doc: RawDocument) -> None:
             return
 
     result = st.session_state.get("mapping_result")
-    if result is None:
+    review: Optional[ReviewState] = st.session_state.get("review_state")
+    if result is None or review is None:
         return
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Rows mapped", len(result.review_rows))
-    c2.metric("Unmapped", result.n_unmapped)
-    c3.metric("Low confidence", result.n_low_confidence)
-    c4.metric("Model used", result.model_used or "—")
 
     if result.fallback_used:
         st.warning(
-            f"⚠️ Fallback used: the primary model "
-            f"`{result.primary_model}` was unavailable, so this mapping was "
-            f"produced by the fallback model `{result.model_used}`."
+            f"⚠️ Fallback used: the primary model `{result.primary_model}` was "
+            f"unavailable, so this mapping was produced by the fallback model "
+            f"`{result.model_used}`."
         )
     else:
         st.caption(f"Mapping produced by `{result.model_used}` (primary model).")
 
-    df = pd.DataFrame([r.to_dict() for r in result.review_rows])
-    st.caption(
-        "Suggested mappings — review below. You can override the "
-        "`standardized_category` in-place; full edit persistence lands in a "
-        "later phase."
+    st.markdown(
+        "Review and **override** the standardized category as needed. Your edits "
+        "are saved and drive the calculations below — the numbers recompute from "
+        "your reviewed mapping. Claude's original suggestion is kept for audit."
     )
-    st.data_editor(
+
+    # Build the editable table from the persisted review state.
+    review_rows = review.rows()
+    period_keys: list[str] = []
+    for r in review_rows:
+        for p in r.values:
+            if p not in period_keys:
+                period_keys.append(p)
+
+    df_rows = []
+    for r in review_rows:
+        rec = {
+            "row_id": r.row_id,
+            "statement": r.statement_type.value,
+            "raw_label": r.raw_label,
+            "original_category": r.original_category.value,
+            "reviewed_category": r.reviewed_category.value,
+            "human_override": r.human_override,
+            "confidence": r.original_confidence.value,
+            "reviewer_note": r.reviewer_note or "",
+            "source_ref": r.source_ref,
+        }
+        for p in period_keys:
+            rec[f"value[{p}]"] = r.values.get(p)
+        df_rows.append(rec)
+    df = pd.DataFrame(df_rows)
+
+    editor_key = f"review_editor_{st.session_state.get('review_editor_nonce', 0)}"
+    edited = st.data_editor(
         df,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "standardized_category": st.column_config.SelectboxColumn(
-                "standardized_category", options=ALLOWED_CATEGORY_VALUES,
+            "reviewed_category": st.column_config.SelectboxColumn(
+                "reviewed_category", options=ALLOWED_CATEGORY_VALUES,
+                help="Override Claude's suggestion here.",
             ),
+            "reviewer_note": st.column_config.TextColumn("reviewer_note"),
         },
-        disabled=[c for c in df.columns if c != "standardized_category"],
-        key="mapping_editor",
+        disabled=[c for c in df.columns
+                  if c not in ("reviewed_category", "reviewer_note")],
+        key=editor_key,
     )
 
-    if result.findings:
-        with st.expander(f"Review flags ({len(result.findings)})"):
-            for f in result.findings:
-                st.write(f"- **{f.severity.value}** · {f.code.value} — {f.message}")
+    # Reconcile edits back into the persisted review state.
+    for _idx, erow in edited.iterrows():
+        rid = erow["row_id"]
+        try:
+            new_cat = StandardizedCategory(erow["reviewed_category"])
+        except ValueError:
+            continue
+        note = erow.get("reviewer_note") or None
+        current = review.get(rid)
+        if new_cat != current.reviewed_category or note != current.reviewer_note:
+            review.set_category(rid, new_cat, note=note)
+
+    # Controls.
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("Reset all to Claude suggestions"):
+            review.reset_all()
+            st.session_state["review_editor_nonce"] = \
+                st.session_state.get("review_editor_nonce", 0) + 1
+            st.rerun()
+    with col_b:
+        st.checkbox("Mark review complete", key="review_complete")
+
+    # Review status summary.
+    summ = review.summary()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Total mapped rows", summ["total_rows"])
+    m2.metric("Unmapped", summ["unmapped_rows"])
+    m3.metric("Low confidence", summ["low_confidence_rows"])
+    m4.metric("Human overrides", summ["human_overrides"])
+
+    ready = summ["clean"] and st.session_state.get("review_complete", False)
+    if ready:
+        st.success("Review status: **ready for export later** "
+                   "(no unmapped rows and marked complete). Export is a later phase.")
+    else:
+        reasons = []
+        if summ["unmapped_rows"]:
+            reasons.append(f"{summ['unmapped_rows']} unmapped row(s)")
+        if not st.session_state.get("review_complete", False):
+            reasons.append("not marked complete")
+        st.info("Review status: **not yet ready for export** — "
+                + ", ".join(reasons) + ".")
 
 
 def deterministic_calculations(doc: RawDocument) -> None:
@@ -207,16 +276,21 @@ def deterministic_calculations(doc: RawDocument) -> None:
         "used for the math."
     )
 
-    result = st.session_state.get("mapping_result")
+    review: Optional[ReviewState] = st.session_state.get("review_state")
     inc = st.session_state.get("selected_income_table")
     bal = st.session_state.get("selected_balance_table")
-    if result is None or inc is None or bal is None or inc == bal:
+    if review is None or inc is None or bal is None or inc == bal:
         st.info("Run AI mapping above (with distinct statements selected) to enable "
                 "deterministic calculations.")
         return
 
-    decisions_by_id = {d.row_id: d for d in result.decisions}
-    compute = compute_spread(doc.tables[inc], doc.tables[bal], decisions_by_id)
+    # Use the HUMAN-REVIEWED mapping, not just Claude's original decisions.
+    decisions_by_id = review.to_decisions_by_id()
+    compute = compute_spread(doc.tables[inc], doc.tables[bal], decisions_by_id,
+                             notes_by_id=review.notes_by_id())
+    n_over = review.summary()["human_overrides"]
+    st.caption(f"Calculations are based on the **reviewed** mapping "
+               f"({n_over} human override(s) applied).")
 
     # Validation summary.
     summ = compute.validation_summary()

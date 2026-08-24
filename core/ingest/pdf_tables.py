@@ -22,6 +22,7 @@ import io
 
 from ._grid import build_table_from_grid
 from .models import RawTable, SourceFormat
+from .scale import detect_scale_currency
 
 _MIN_VALUE_COLUMNS = 1
 _MIN_DATA_ROWS = 2
@@ -89,6 +90,9 @@ def extract_pdf_tables(data: bytes) -> tuple[list[RawTable], list[str]]:
                     min_data_rows=_MIN_DATA_ROWS,
                 )
                 if parsed is not None:
+                    scale, currency = detect_scale_currency(text[:400])
+                    parsed.detected_scale = scale.value if scale else None
+                    parsed.detected_currency = currency
                     parsed.warnings.append(
                         "PDF table geometry is inferred, not structural — verify "
                         "column alignment and values against the source page."

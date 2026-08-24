@@ -37,8 +37,21 @@ def bind_table(
     *,
     source_scale: SourceScale = SourceScale.UNKNOWN,
     currency: Optional[str] = None,
+    notes_by_id: Optional[dict[str, str]] = None,
 ) -> list[SpreadItem]:
-    """Bind one table's rows to SpreadItems using the given decisions."""
+    """Bind one table's rows to SpreadItems using the given decisions.
+
+    A scale/currency detected on the table (Phase 5) takes precedence over the
+    caller-supplied defaults; otherwise the defaults are used.
+    """
+    if table.detected_scale:
+        try:
+            source_scale = SourceScale(table.detected_scale)
+        except ValueError:
+            pass
+    if table.detected_currency:
+        currency = table.detected_currency
+
     items: list[SpreadItem] = []
     for row in table.rows:
         rid = _row_id(table.table_index, row.row_index)
@@ -76,6 +89,7 @@ def bind_table(
                     f"{statement_type.value}, table {table.table_index}, "
                     f"row {row.row_index}, col {period}"
                 ),
+                notes=(notes_by_id or {}).get(rid),
             ))
     return items
 
@@ -87,13 +101,16 @@ def bind_spread_items(
     *,
     source_scale: SourceScale = SourceScale.UNKNOWN,
     currency: Optional[str] = None,
+    notes_by_id: Optional[dict[str, str]] = None,
 ) -> list[SpreadItem]:
     """Bind both selected tables into a single list of SpreadItems."""
     items: list[SpreadItem] = []
     if income_table is not None:
         items += bind_table(income_table, StatementType.INCOME_STATEMENT,
-                            decisions_by_id, source_scale=source_scale, currency=currency)
+                            decisions_by_id, source_scale=source_scale,
+                            currency=currency, notes_by_id=notes_by_id)
     if balance_table is not None:
         items += bind_table(balance_table, StatementType.BALANCE_SHEET,
-                            decisions_by_id, source_scale=source_scale, currency=currency)
+                            decisions_by_id, source_scale=source_scale,
+                            currency=currency, notes_by_id=notes_by_id)
     return items

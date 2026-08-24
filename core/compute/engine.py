@@ -99,10 +99,11 @@ def compute_spread(
     *,
     source_scale: SourceScale = SourceScale.UNKNOWN,
     currency: Optional[str] = None,
+    notes_by_id: Optional[dict[str, str]] = None,
 ) -> ComputeResult:
     """Bind the selected tables + decisions, then compute ratios and validations."""
     items = bind_spread_items(
         income_table, balance_table, decisions_by_id,
-        source_scale=source_scale, currency=currency,
+        source_scale=source_scale, currency=currency, notes_by_id=notes_by_id,
     )
     return compute_from_items(items)

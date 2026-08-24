@@ -84,6 +84,8 @@ class RawTable:
     heading: Optional[str] = None     # nearby heading/caption to help identify the statement
     page_number: Optional[int] = None  # PDF only
     n_value_columns: int = 0
+    detected_scale: Optional[str] = None    # e.g. "millions" if a scale note was found
+    detected_currency: Optional[str] = None  # e.g. "USD" if detectable
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -98,6 +100,8 @@ class RawTable:
             "page_number": self.page_number,
             "period_labels": list(self.period_labels),
             "n_value_columns": self.n_value_columns,
+            "detected_scale": self.detected_scale,
+            "detected_currency": self.detected_currency,
             "n_data_rows": self.n_data_rows,
             "warnings": list(self.warnings),
             "rows": [r.to_dict() for r in self.rows],

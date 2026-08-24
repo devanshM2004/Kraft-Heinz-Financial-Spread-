@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 
 from ._grid import Grid, build_table_from_grid
 from .models import RawTable, SourceFormat
+from .scale import detect_scale_currency
 
 _MIN_VALUE_COLUMNS = 1
 _MIN_DATA_ROWS = 2
@@ -84,6 +85,21 @@ def _table_grid(table) -> Grid:
     return [_row_to_grid(tr) for tr in trs]
 
 
+def _nearby_text(table) -> str:
+    """Preceding text + the table's own top for scale/currency detection."""
+    parts: list[str] = []
+    node = table
+    for _ in range(8):
+        node = node.find_previous(_HEADING_TAGS)
+        if node is None:
+            break
+        txt = node.get_text(separator=" ", strip=True)
+        if txt:
+            parts.append(txt)
+    parts.append(table.get_text(separator=" ", strip=True)[:300])
+    return " ".join(parts)
+
+
 def extract_html_tables(html: str) -> tuple[list[RawTable], list[str]]:
     """
     Extract candidate financial tables from HTML.
@@ -111,6 +127,9 @@ def extract_html_tables(html: str) -> tuple[list[RawTable], list[str]]:
         )
         if parsed is None:
             continue
+        scale, currency = detect_scale_currency(_nearby_text(raw_tbl))
+        parsed.detected_scale = scale.value if scale else None
+        parsed.detected_currency = currency
         if any(c.has_attr("rowspan") for c in raw_tbl.find_all(["td", "th"])):
             parsed.warnings.append(
                 "Table uses rowspan; extraction ignores rowspans and columns "
