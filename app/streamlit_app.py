@@ -42,6 +42,8 @@ from core.schema import ALLOWED_CATEGORY_VALUES  # noqa: E402
 from core.compute import compute_spread  # noqa: E402
 from core.schema import Severity, StandardizedCategory  # noqa: E402
 from core.review import ReviewState  # noqa: E402
+from core.export import build_workbook_bytes  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
 
 st.set_page_config(page_title="Credit Spread Builder — Extraction", layout="wide")
 
@@ -353,6 +355,73 @@ def deterministic_calculations(doc: RawDocument) -> None:
                     st.write(f"- {line} — {f.message}")
 
 
+def excel_export(doc: RawDocument) -> None:
+    st.divider()
+    st.subheader("5 · Excel Export")
+
+    review: Optional[ReviewState] = st.session_state.get("review_state")
+    inc = st.session_state.get("selected_income_table")
+    bal = st.session_state.get("selected_balance_table")
+    if review is None or inc is None or bal is None or inc == bal:
+        st.info("Complete AI mapping and review above to enable Excel export.")
+        return
+
+    # Recompute from the reviewed mapping so the workbook matches the app.
+    compute = compute_spread(doc.tables[inc], doc.tables[bal],
+                             review.to_decisions_by_id(),
+                             notes_by_id=review.notes_by_id())
+    summ = review.summary()
+    vsumm = compute.validation_summary()
+
+    # Only truly block when there is nothing mapped to export.
+    n_mapped = sum(1 for r in review.rows()
+                   if r.reviewed_category not in (StandardizedCategory.UNMAPPED,
+                                                  StandardizedCategory.IGNORE))
+    if n_mapped == 0:
+        st.error("Nothing to export yet — no rows are mapped to a standardized "
+                 "category. Map/review at least one row first.")
+        return
+
+    complete = st.session_state.get("review_complete", False)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Review complete", "Yes" if complete else "No")
+    c2.metric("Validation errors", vsumm["n_errors"])
+    c3.metric("Warnings", vsumm["n_warnings"])
+
+    if not complete:
+        st.info("Review is not marked complete. You can still export, but mark it "
+                "complete above once you've reviewed the mappings.")
+    if vsumm["n_errors"] > 0:
+        st.warning(f"⚠️ {vsumm['n_errors']} validation error(s) present "
+                   "(e.g. balance-sheet imbalance). You can still export, but the "
+                   "workbook will contain unresolved errors — resolve them first "
+                   "if possible.")
+    st.caption("The exported workbook still **requires human review**. It is for "
+               "synthetic/public-company data only.")
+
+    if st.button("Generate Excel workbook", type="primary"):
+        data = build_workbook_bytes(
+            source_filename=doc.filename,
+            income_table=doc.tables[inc],
+            balance_table=doc.tables[bal],
+            compute=compute,
+            review=review,
+            generated_at=datetime.now(timezone.utc),
+        )
+        st.session_state["xlsx_bytes"] = data
+
+    data = st.session_state.get("xlsx_bytes")
+    if data:
+        stem = Path(doc.filename).stem or "spread"
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        st.download_button(
+            "⬇️ Download credit spread (.xlsx)",
+            data=data,
+            file_name=f"credit_spread_{stem}_{ts}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+
 def main() -> None:
     st.title("Credit Spread Builder")
     st.caption("Phase 2 — deterministic extraction & preview. No AI mapping, "
@@ -401,11 +470,12 @@ def main() -> None:
     statement_pickers(doc)
     ai_mapping_review(doc)
     deterministic_calculations(doc)
+    excel_export(doc)
 
     st.divider()
     st.caption(
-        "Next phase (not built yet): export the reviewed spread to Excel. "
-        "Numbers are always Python-owned; Claude only classifies."
+        "Numbers are always Python-owned; Claude only classifies. Scanned-PDF "
+        "(vision) support and SEC/XBRL cross-check are future work."
     )
 
 

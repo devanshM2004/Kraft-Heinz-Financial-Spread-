@@ -223,3 +223,8 @@ __marimo__/
 
 # Offline-test scratch output
 /data/_test_tmp/
+
+# Generated spreads / user uploads (never commit)
+*.xlsx
+/uploads/
+/exports/
