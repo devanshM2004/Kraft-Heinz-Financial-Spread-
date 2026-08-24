@@ -292,11 +292,13 @@ class ClaudeMapper:
 
         models = [self.model] + ([self.fallback_model] if self.fallback_model else [])
         last_error: Optional[Exception] = None
-        for model in models:
+        for attempt, model in enumerate(models):
             try:
                 data = self._request(input_rows, model)
                 result = validate_and_bind(data, input_rows)
                 result.model_used = model
+                result.primary_model = self.model
+                result.fallback_used = attempt > 0
                 return result
             except (MappingRefusalError, MappingTransportError, MappingSchemaError) as exc:
                 last_error = exc

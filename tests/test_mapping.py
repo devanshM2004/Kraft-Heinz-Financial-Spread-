@@ -201,6 +201,8 @@ def test_mapper_with_mock() -> None:
     result = mapper.map(inputs)
     check("mock mapping bound all rows", len(result.review_rows) == len(inputs))
     check("model_used recorded", result.model_used == "claude-opus-5")
+    check("primary_model recorded", result.primary_model == "claude-opus-5")
+    check("fallback_used is False on primary success", result.fallback_used is False)
     check("exactly one API call made", len(client.messages.calls) == 1)
     # It requested structured output (schema-constrained), and sent no numbers back.
     call = client.messages.calls[0]
@@ -218,7 +220,11 @@ def test_mapper_fallback() -> None:
                           fallback_model="claude-sonnet-5")
     result = mapper.map(inputs)
     check("fell back to secondary model", result.model_used == "claude-sonnet-5")
+    check("fallback_used flag is True", result.fallback_used is True)
+    check("primary_model still recorded", result.primary_model == "claude-opus-5")
     check("two API calls attempted", len(client.messages.calls) == 2)
+    # Transparency: to_dict exposes the fallback so the UI/consumers can't miss it.
+    check("to_dict exposes fallback_used", result.to_dict()["fallback_used"] is True)
 
 
 def test_refusal_then_fail() -> None:

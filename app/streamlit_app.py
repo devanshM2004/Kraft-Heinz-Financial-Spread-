@@ -159,7 +159,16 @@ def ai_mapping_review(doc: RawDocument) -> None:
     c1.metric("Rows mapped", len(result.review_rows))
     c2.metric("Unmapped", result.n_unmapped)
     c3.metric("Low confidence", result.n_low_confidence)
-    c4.metric("Model", result.model_used or "—")
+    c4.metric("Model used", result.model_used or "—")
+
+    if result.fallback_used:
+        st.warning(
+            f"⚠️ Fallback used: the primary model "
+            f"`{result.primary_model}` was unavailable, so this mapping was "
+            f"produced by the fallback model `{result.model_used}`."
+        )
+    else:
+        st.caption(f"Mapping produced by `{result.model_used}` (primary model).")
 
     df = pd.DataFrame([r.to_dict() for r in result.review_rows])
     st.caption(

@@ -79,7 +79,9 @@ class MappingResult:
     review_rows: list[MappingReviewRow] = field(default_factory=list)
     decisions: list[MappingDecision] = field(default_factory=list)
     findings: list[ValidationFinding] = field(default_factory=list)
-    model_used: Optional[str] = None
+    model_used: Optional[str] = None        # the model that actually produced this
+    primary_model: Optional[str] = None     # the model attempted first
+    fallback_used: bool = False             # True when model_used != primary_model
     raw_response: Optional[dict] = None
 
     @property
@@ -96,6 +98,8 @@ class MappingResult:
     def to_dict(self) -> dict:
         return {
             "model_used": self.model_used,
+            "primary_model": self.primary_model,
+            "fallback_used": self.fallback_used,
             "n_rows": len(self.review_rows),
             "n_unmapped": self.n_unmapped,
             "n_low_confidence": self.n_low_confidence,
