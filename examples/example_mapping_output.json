@@ -1,0 +1,172 @@
+{
+  "mappings": [
+    {
+      "row_id": "r01",
+      "standardized_category": "revenue",
+      "confidence": "high",
+      "rationale": "'Net sales' is the top-line revenue caption."
+    },
+    {
+      "row_id": "r02",
+      "standardized_category": "cost_of_goods_sold",
+      "confidence": "high",
+      "rationale": "'Cost of products sold' is COGS."
+    },
+    {
+      "row_id": "r03",
+      "standardized_category": "gross_profit",
+      "confidence": "high",
+      "rationale": "'Gross profit' is the standard gross-margin subtotal."
+    },
+    {
+      "row_id": "r04",
+      "standardized_category": "selling_general_admin",
+      "confidence": "high",
+      "rationale": "Matches SG&A."
+    },
+    {
+      "row_id": "r05",
+      "standardized_category": "operating_income",
+      "confidence": "high",
+      "rationale": "'Operating income' is EBIT subtotal."
+    },
+    {
+      "row_id": "r06",
+      "standardized_category": "interest_expense",
+      "confidence": "high",
+      "rationale": "Explicit interest expense line."
+    },
+    {
+      "row_id": "r07",
+      "standardized_category": "income_before_taxes",
+      "confidence": "high",
+      "rationale": "Pre-tax income subtotal."
+    },
+    {
+      "row_id": "r08",
+      "standardized_category": "income_tax_expense",
+      "confidence": "high",
+      "rationale": "Tax provision maps to income tax expense."
+    },
+    {
+      "row_id": "r09",
+      "standardized_category": "net_income",
+      "confidence": "high",
+      "rationale": "Bottom-line net income subtotal."
+    },
+    {
+      "row_id": "r10",
+      "standardized_category": "depreciation_amortization",
+      "confidence": "medium",
+      "rationale": "D&A disclosed on the face; needed for EBITDA."
+    },
+    {
+      "row_id": "r11",
+      "standardized_category": "unmapped",
+      "confidence": "low",
+      "rationale": "Ambiguous 'Other, net'; cannot confidently place."
+    },
+    {
+      "row_id": "r20",
+      "standardized_category": "cash_and_equivalents",
+      "confidence": "high",
+      "rationale": "Explicit cash line."
+    },
+    {
+      "row_id": "r21",
+      "standardized_category": "accounts_receivable",
+      "confidence": "high",
+      "rationale": "Trade receivables = accounts receivable."
+    },
+    {
+      "row_id": "r22",
+      "standardized_category": "inventory",
+      "confidence": "high",
+      "rationale": "'Inventories' maps to inventory."
+    },
+    {
+      "row_id": "r23",
+      "standardized_category": "total_current_assets",
+      "confidence": "high",
+      "rationale": "Current assets subtotal."
+    },
+    {
+      "row_id": "r24",
+      "standardized_category": "property_plant_equipment_net",
+      "confidence": "high",
+      "rationale": "Net PP&E line."
+    },
+    {
+      "row_id": "r25",
+      "standardized_category": "goodwill",
+      "confidence": "high",
+      "rationale": "Explicit goodwill line."
+    },
+    {
+      "row_id": "r26",
+      "standardized_category": "other_noncurrent_assets",
+      "confidence": "high",
+      "rationale": "Residual non-current assets."
+    },
+    {
+      "row_id": "r27",
+      "standardized_category": "total_assets",
+      "confidence": "high",
+      "rationale": "Total assets subtotal."
+    },
+    {
+      "row_id": "r28",
+      "standardized_category": "accounts_payable",
+      "confidence": "high",
+      "rationale": "Explicit AP line."
+    },
+    {
+      "row_id": "r29",
+      "standardized_category": "current_portion_long_term_debt",
+      "confidence": "high",
+      "rationale": "Current maturities of LT debt."
+    },
+    {
+      "row_id": "r30",
+      "standardized_category": "total_current_liabilities",
+      "confidence": "high",
+      "rationale": "Current liabilities subtotal."
+    },
+    {
+      "row_id": "r31",
+      "standardized_category": "long_term_debt",
+      "confidence": "high",
+      "rationale": "Explicit long-term debt line."
+    },
+    {
+      "row_id": "r32",
+      "standardized_category": "other_noncurrent_liabilities",
+      "confidence": "high",
+      "rationale": "Residual non-current liabilities."
+    },
+    {
+      "row_id": "r33",
+      "standardized_category": "total_liabilities",
+      "confidence": "high",
+      "rationale": "Total liabilities subtotal."
+    },
+    {
+      "row_id": "r34",
+      "standardized_category": "total_equity",
+      "confidence": "high",
+      "rationale": "Total equity subtotal."
+    },
+    {
+      "row_id": "r35",
+      "standardized_category": "total_liabilities_and_equity",
+      "confidence": "high",
+      "rationale": "Balancing subtotal."
+    },
+    {
+      "row_id": "r36",
+      "standardized_category": "ignore",
+      "confidence": "high",
+      "rationale": "Narrative footnote, not a data row."
+    }
+  ]
+}

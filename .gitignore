@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Fetched raw SEC artifacts (large, reproducible)
+/data/raw/*
+!/data/raw/.gitkeep
+
+# Offline-test scratch output
+/data/_test_tmp/
+
+# Generated spreads / user uploads (never commit)
+*.xlsx
+/uploads/
+/exports/
