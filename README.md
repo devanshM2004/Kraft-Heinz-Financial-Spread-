@@ -1,135 +1,195 @@
-# Kraft Heinz Financial Spread Builder
+# AI Financial Statement Spreader
 
-An AI-assisted tool that "spreads" commercial financial statements the way a
-bank credit analyst would: it takes a company's filing (10-K), normalizes the
-income statement and balance sheet into standardized line items, computes credit
-ratios, runs validation checks, and outputs an Excel workbook.
+A local **Streamlit** app that "spreads" a public-company financial statement the
+way a bank credit analyst would. You upload a **10-K / 10-Q** filing; the tool
+extracts the financial-statement tables, uses **Claude to map raw line items to
+standardized spread categories**, computes credit ratios and validation checks
+**deterministically in Python**, lets a **human review and correct** the mapping,
+and exports a clean **Excel credit-spread workbook**.
 
-## Core design principles (these outrank features)
-
-1. **The LLM only classifies/maps.** It decides which raw line item maps to
-   which standardized spread category. It never invents, adjusts, or "corrects"
-   a number. Every figure in the output traces back to a figure in the source.
-2. **All math is deterministic Python** — subtotals, ratios, growth rates, and
-   validation checks. Never the LLM.
-3. **Validation is surfaced, never silently fixed** — the balance sheet must
-   balance, subtotals must foot, and failures are reported, not forced.
-4. **Every extracted figure carries provenance** — confidence flag, source
-   location (page/table/row), original raw label, and mapped category.
-5. **Human-in-the-loop**, not full automation.
-
-Test data is **public-company or synthetic only** — never real borrower data.
-Primary test case: **The Kraft Heinz Company (KHC)**.
-
-## Build phases
-
-| Phase | Scope | Status |
-|-------|-------|--------|
-| **0** | Data acquisition (SEC EDGAR fetcher) | ✅ Built |
-| 1 | Standardized spread schema + strict JSON contract | pending |
-| 2 | Extract raw statement tables from the filing | pending |
-| 3 | LLM extraction/mapping w/ confidence + source refs | pending |
-| 4 | Deterministic ratios, subtotals, validation, XBRL diff | pending |
-| 5 | Excel output workbook | pending |
-| 6 | Scanned/image PDF support via Claude vision | pending |
+> Educational portfolio project. **Public-company or synthetic data only — never
+> real borrower data.** Not a real bank credit model and not a credit decision.
+> The output always requires human review.
 
 ---
 
-## Phase 0 — Data acquisition (no Anthropic API)
+## 1. Project overview
 
-Phase 0 pulls, for a ticker (default `KHC`):
+**What it does** — turns a messy filing into a standardized, auditable credit
+spread: normalized income-statement and balance-sheet line items, computed ratios
+(current ratio, debt-to-equity, debt-to-EBITDA, EBITDA margin, net margin,
+revenue growth, and an **Approximate DSCR**), validation checks (balance-sheet
+balance, subtotal footing, missing categories, low-confidence/unmapped rows), and
+an Excel workbook in the spirit of a bank spread.
 
-1. The **latest 10-K primary document** (HTML) from SEC EDGAR.
-2. The **XBRL companyfacts JSON** (kept as ground truth for later validation).
+**Who it's for** — credit analysts, commercial-banking / underwriting teams, and
+anyone who spreads financials and wants an AI assist without handing the numbers
+to an AI. It's also a portfolio piece demonstrating responsible, auditable use of
+an LLM in a finance workflow.
 
-It does **not** call the Anthropic API or do any extraction/mapping.
+**Why it's relevant to credit analysis** — spreading is repetitive and
+error-prone: the same line items get re-keyed and re-categorized for every
+borrower. An LLM is genuinely good at the *classification* part (which raw label
+is "SG&A"?) but must **never** be trusted with the arithmetic. This tool draws
+that line hard: AI classifies, Python computes, a human signs off.
 
-### What it does, step by step
+---
 
-1. Fetches `https://www.sec.gov/files/company_tickers.json` and **resolves the
-   CIK from the ticker** (never hardcoded).
-2. Zero-pads the CIK to 10 digits and fetches the submissions API:
-   `https://data.sec.gov/submissions/CIK{cik10}.json`.
-3. Finds the **most recent `10-K`** in `filings.recent`.
-4. Builds the primary-document URL:
-   `https://www.sec.gov/Archives/edgar/data/{cik}/{accession_nodash}/{doc}`.
-5. Downloads the 10-K HTML and the companyfacts JSON:
-   `https://data.sec.gov/api/xbrl/companyfacts/CIK{cik10}.json`.
-6. Saves every raw artifact under `data/raw/` and prints a summary.
+## 2. Responsible AI design (the core principle)
 
-### SEC compliance
+This matters more than any feature:
 
-- **User-Agent** is sent on *every* request (SEC requires it). It is read from
-  the `SEC_USER_AGENT` environment variable. **No personal contact is committed
-  to the repo** — if `SEC_USER_AGENT` is unset, the code falls back to the
-  placeholder `Your Name your.email@example.com` and prints a warning telling
-  you to set a real contact before making live SEC requests.
+- **Claude maps/classifies only.** Its entire job is to pick which standardized
+  category a raw line item belongs to (with a confidence flag and a short
+  rationale).
+- **Claude never returns, invents, adjusts, or "corrects" a number.** The strict
+  JSON contract it must return has *no field for a value* — a numeric value in the
+  response is rejected by schema validation before it is ever trusted.
+- **Python owns every number.** Extraction reads the source values; Python binds
+  them to categories by `row_id`, derives the calculation-normalized values,
+  computes all subtotals/ratios, runs all validation checks, and writes the Excel.
+- **Every figure is traceable** to a source cell (page/table/row/column, raw
+  label, mapped category, confidence).
+- **Human-in-the-loop.** The analyst reviews and can override any mapping; the
+  reviewed mapping (not Claude's original) drives the computed spread. Export is
+  gated behind that review.
 
-  Set it to your own name and email before running live:
-  ```bash
-  # macOS / Linux
-  SEC_USER_AGENT="Devansh M your.email@example.com" python run_phase0.py
-  ```
-  ```powershell
-  # Windows PowerShell
-  $env:SEC_USER_AGENT="Devansh M your.email@example.com"; python run_phase0.py
-  ```
-- **Rate limiting**: a minimum interval between requests (0.15s ≈ 6.7 req/s)
-  keeps us safely below SEC's ~10 req/s ceiling.
-- Transient errors (network, 429, 5xx) retry with exponential backoff; policy
-  denials (403/407) are reported, never retried or routed around.
+`source_value` (exactly as displayed in the filing) is preserved separately from
+`calculation_value` (Python's sign-normalized figure used for math), so the audit
+trail always shows the original figure.
 
-### Run it
+---
+
+## 3. Workflow
+
+1. **Upload** a filing (HTML or text-based PDF).
+2. **Preview** the deterministically extracted tables (raw rows, parsed values,
+   source references).
+3. **Select** which table is the Income Statement and which is the Balance Sheet.
+4. **Run AI mapping** — Claude classifies each raw row into a standardized
+   category (classification only).
+5. **Review / edit** the mapping — override any category; overrides persist and
+   are audited (original vs. reviewed, confidence, reviewer note).
+6. **View deterministic calculations & validations** — ratios per period and a
+   pass/fail validation summary, recomputed from your reviewed mapping.
+7. **Export** the Excel credit-spread workbook.
+
+---
+
+## 4. How to run
 
 ```bash
-pip install -r requirements.txt          # Phase 0 only needs `requests`
-python run_phase0.py                      # defaults to KHC
-python run_phase0.py --ticker KHC
+pip install -r requirements.txt
 ```
 
-Offline logic checks (no network needed):
+Set your Anthropic API key (used only for the mapping step; read from the
+environment, never stored or committed):
 
 ```bash
-python tests/test_edgar_logic_offline.py
+# macOS / Linux
+export ANTHROPIC_API_KEY="sk-ant-..."
+streamlit run app/streamlit_app.py
 ```
 
-### HTML vs. PDF: the input-format decision
+```powershell
+# Windows PowerShell
+$env:ANTHROPIC_API_KEY="sk-ant-..."
+streamlit run app/streamlit_app.py
+```
 
-The 10-K primary document is **HTML**. The spec allowed either parsing the HTML
-tables directly or converting pages to PDF for the `pdfplumber` path. **We
-choose to parse the HTML directly** (Phase 2), because:
+The app opens at http://localhost:8501. A synthetic filing you can upload lives at
+`tests/fixtures/synthetic_filing.html`.
 
-- SEC 10-K financial statements are **native HTML `<table>`** elements with real
-  cell structure — rows, columns, and colspans are recoverable with
-  `beautifulsoup4`/`lxml` without any layout guesswork.
-- Converting HTML → PDF → text (pdfplumber) throws away that structure and
-  reintroduces column-alignment ambiguity that PDF table extraction is
-  notoriously fragile about. It's a lossy round trip.
-- Keeping the HTML also preserves reliable **source references** (table index,
-  row index) for the provenance requirement.
+**Without an API key** the app still runs — upload, extraction, and preview work;
+the AI mapping step shows a clear message and is disabled until the key is set.
 
-`pdfplumber` still earns its place for genuinely **PDF-native or scanned**
-filings, and Claude vision (Phase 6) covers image-only scans. So the tool will
-support both paths — but HTML filings go through the HTML parser, not a forced
-PDF conversion.
+Run the test suite (no network, no API calls, no extra dependencies):
 
-> ### ⚠️ Network requirement / current environment note
-> Phase 0 needs outbound HTTPS to `www.sec.gov` and `data.sec.gov`. In some
-> managed/proxied environments these hosts are blocked by egress policy — the
-> fetcher will report `Access ... denied by an egress proxy (policy block)` and
-> exit non-zero rather than fabricate results. If you hit that, allow the SEC
-> hosts in the environment's network policy and re-run.
+```bash
+python run_tests.py           # or run any tests/test_*.py file directly
+```
 
-## Project layout
+---
+
+## 5. Environment variables
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Claude API key for the mapping step. Read from the environment only; never stored or committed. | Yes, for AI mapping |
+| `SEC_USER_AGENT` | Descriptive User-Agent (`"Your Name your.email@example.com"`) for the **optional/future** SEC EDGAR fetcher only. Not needed for the app. | No |
+
+Copy `.env.example` if you prefer a `.env` file (it is gitignored — never commit it).
+
+---
+
+## 6. Current MVP scope
+
+- Uploaded **HTML** filings (the primary path; SEC 10-K primary documents are HTML).
+- **Text-based PDFs** where extraction works (unreliable geometry is surfaced,
+  never faked).
+- **Income Statement** and **Balance Sheet**.
+- **Claude mapping** with a strict JSON contract + confidence + rationale.
+- **Human review / edit** of mappings with a full override audit trail.
+- **Deterministic** ratios and validation checks.
+- **Excel export** (7 tabs: Overview, Income Statement Spread, Balance Sheet
+  Spread, Ratios, Validation Checks, Mapping Audit Trail, Raw Extracted Rows).
+
+---
+
+## 7. Intentionally excluded / future work
+
+- Scanned / image PDFs via Claude **vision**.
+- **SEC / XBRL** cross-check of extracted figures against ground truth. *(A Phase-0
+  EDGAR fetcher exists — `src/edgar_fetcher.py`, `run_phase0.py` — as optional
+  scaffolding for this, gated behind `SEC_USER_AGENT`.)*
+- **Cash flow statement** (and a CFADS-based DSCR).
+- Hosted / multi-user web app.
+- Real borrower data.
+- Bank-policy-validated scoring or covenant logic.
+
+---
+
+## 8. Disclaimer
+
+This is an **educational portfolio project**. It works on **public-company or
+synthetic data only**. It is **not** a real bank credit model, **not** a credit
+decision or recommendation, and its output **requires human review**. The
+"Approximate DSCR" is a rough estimate from income-statement/balance-sheet inputs
+— **not** a bank-quality or CFADS-based DSCR.
+
+---
+
+## 9. Demo checklist
+
+A short run-through before showing the project to someone is in
+[`docs/demo_checklist.md`](docs/demo_checklist.md).
+
+---
+
+## Project structure
 
 ```
-.
-├── requirements.txt
-├── run_phase0.py                     # Phase 0 CLI runner
-├── src/
-│   └── edgar_fetcher.py              # SEC EDGAR fetcher (Phase 0)
-├── tests/
-│   └── test_edgar_logic_offline.py   # offline logic checks (no network)
-└── data/
-    └── raw/                          # fetched raw artifacts (gitignored)
+app/streamlit_app.py        # the Streamlit app (upload → preview → map → review → calc → export)
+core/
+  ingest/                   # deterministic extraction (HTML/PDF), number parsing, scale detection
+  schema/                   # standardized categories, strict AI mapping contract, ratio specs
+  mapping/                  # Claude mapping step (classification only) + validation/binding
+  compute/                  # binding, sign normalization, ratios, validation engine
+  review/                   # human review/edit state + override audit trail
+  export/                   # openpyxl Excel workbook
+scripts/live_mapping_smoke.py   # optional live API smoke test (not part of the suite)
+src/edgar_fetcher.py, run_phase0.py   # optional/future SEC EDGAR fetcher
+tests/                      # deterministic tests (no network, mocked Claude)
+docs/schema.md              # schema & contract documentation
 ```
+
+## How the number-integrity guarantee is enforced
+
+- The AI response schema (`core/schema/mapping_contract.py`) has
+  `additionalProperties: false` and **no value field** — a smuggled number is
+  rejected (tested).
+- `core/mapping/` validates every response, rejects out-of-vocabulary categories,
+  duplicate/hallucinated/missing `row_id`s, and fills omitted rows as `unmapped`
+  for review rather than guessing.
+- `core/compute/` binds Python-owned source values by `row_id` and derives every
+  calculation and ratio deterministically.
