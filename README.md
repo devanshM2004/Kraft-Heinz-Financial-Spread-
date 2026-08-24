@@ -100,8 +100,23 @@ streamlit run app/streamlit_app.py
 The app opens at http://localhost:8501. A synthetic filing you can upload lives at
 `tests/fixtures/synthetic_filing.html`.
 
-**Without an API key** the app still runs — upload, extraction, and preview work;
-the AI mapping step shows a clear message and is disabled until the key is set.
+### Running without an API key (Demo Mode)
+
+The **entire workflow is demoable without `ANTHROPIC_API_KEY`.** If no key is set,
+the mapping step shows *"Live Claude mapping requires ANTHROPIC_API_KEY. You can
+still use Demo Mode."* and offers a **Use Demo Mapping** button.
+
+Demo Mode maps raw line items to standardized categories with a **deterministic,
+keyword-based Python classifier** — it makes **no Anthropic API call** and is
+clearly labelled *"Demo mapping — deterministic sample output, not AI-generated."*
+It is never presented as Claude output. The demo mappings populate the **same
+review table**, so you can still edit mappings, run the deterministic
+calculations/validations, and export the Excel workbook.
+
+**Live AI mapping requires `ANTHROPIC_API_KEY` and API credits.** When a key is
+set, the app offers both *Run AI mapping (Claude)* and *Use Demo Mapping (no API)*.
+The number-control rules are identical in both modes: mapping only chooses a
+category; Python owns every value, calculation, validation, and the Excel output.
 
 Run the test suite (no network, no API calls, no extra dependencies):
 

@@ -41,8 +41,11 @@ public-company data only.
       table is skipped; parsed values and source references show in the preview.
 - [ ] **Select the statements** — pick the Income Statement table and the Balance
       Sheet table (auto-defaulted by heading).
-- [ ] **Run AI mapping** — click *Run AI mapping*; note the model used (and any
-      fallback banner).
+- [ ] **Run mapping** — click *Run AI mapping (Claude)*; note the model used (and
+      any fallback banner). **No API key / no credits?** Click *Use Demo Mapping*
+      instead — it produces deterministic, clearly-labelled sample mappings with
+      no API call, and the rest of the workflow (review, calculations, export)
+      works identically.
 - [ ] **Review / edit mappings** — override a category in the dropdown; watch the
       *human_override* flag set and the review status update. Try *Reset to Claude
       suggestions* and *Mark review complete*.

@@ -23,6 +23,7 @@ SUITES = [
     "tests.test_detect",
     "tests.test_html_extraction",
     "tests.test_mapping",
+    "tests.test_demo",
     "tests.test_compute",
     "tests.test_review",
     "tests.test_export",

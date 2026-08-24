@@ -22,6 +22,7 @@ from .claude_mapper import (
     is_api_key_available,
     validate_and_bind,
 )
+from .demo_mapper import DEMO_MODEL_LABEL, classify_label, demo_map
 from .models import MappingInputRow, MappingResult, MappingReviewRow
 
 __all__ = [
@@ -29,6 +30,9 @@ __all__ = [
     "build_mapping_inputs",
     "validate_and_bind",
     "is_api_key_available",
+    "demo_map",
+    "classify_label",
+    "DEMO_MODEL_LABEL",
     "MappingError",
     "MissingAPIKeyError",
     "MappingSchemaError",

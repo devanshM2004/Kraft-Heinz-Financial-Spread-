@@ -82,6 +82,7 @@ class MappingResult:
     model_used: Optional[str] = None        # the model that actually produced this
     primary_model: Optional[str] = None     # the model attempted first
     fallback_used: bool = False             # True when model_used != primary_model
+    is_demo: bool = False                   # True for deterministic demo (non-AI) mapping
     raw_response: Optional[dict] = None
 
     @property
@@ -100,6 +101,7 @@ class MappingResult:
             "model_used": self.model_used,
             "primary_model": self.primary_model,
             "fallback_used": self.fallback_used,
+            "is_demo": self.is_demo,
             "n_rows": len(self.review_rows),
             "n_unmapped": self.n_unmapped,
             "n_low_confidence": self.n_low_confidence,

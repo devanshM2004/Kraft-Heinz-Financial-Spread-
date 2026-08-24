@@ -36,6 +36,7 @@ from core.mapping import (  # noqa: E402
     MappingError,
     MissingAPIKeyError,
     build_mapping_inputs,
+    demo_map,
     is_api_key_available,
 )
 from core.schema import ALLOWED_CATEGORY_VALUES  # noqa: E402
@@ -130,42 +131,61 @@ def ai_mapping_review(doc: RawDocument) -> None:
                 "to enable AI mapping.")
         return
 
-    if not is_api_key_available():
-        st.warning(
-            "**ANTHROPIC_API_KEY is not set**, so AI mapping is disabled. "
-            "Set it and rerun:\n\n"
-            "```bash\nexport ANTHROPIC_API_KEY=\"sk-ant-...\"\nstreamlit run app/streamlit_app.py\n```\n\n"
-            "The key is read from the environment only — it is never stored or "
-            "committed."
-        )
-        return
+    def _store(result) -> None:
+        st.session_state["mapping_result"] = result
+        st.session_state["review_state"] = ReviewState.from_mapping_result(result)
+        st.session_state["review_editor_nonce"] = \
+            st.session_state.get("review_editor_nonce", 0) + 1
 
-    if st.button("Run AI mapping", type="primary"):
+    def _run_demo() -> None:
         inputs = build_mapping_inputs(doc.tables[inc], doc.tables[bal])
-        try:
-            mapper = ClaudeMapper.from_env()
-            with st.spinner(f"Mapping {len(inputs)} rows with Claude…"):
-                result = mapper.map(inputs)
-            st.session_state["mapping_result"] = result
-            st.session_state["review_state"] = ReviewState.from_mapping_result(result)
-            st.session_state["review_editor_nonce"] = \
-                st.session_state.get("review_editor_nonce", 0) + 1
-        except MissingAPIKeyError as exc:
-            st.error(str(exc))
-            return
-        except MappingError as exc:
-            st.error(f"Mapping failed: {exc}")
-            details = getattr(exc, "details", None)
-            if details:
-                st.code("\n".join(details))
-            return
+        _store(demo_map(inputs))
+
+    if is_api_key_available():
+        col_live, col_demo = st.columns(2)
+        run_live = col_live.button("Run AI mapping (Claude)", type="primary")
+        run_demo = col_demo.button("Use Demo Mapping (no API)")
+        if run_live:
+            inputs = build_mapping_inputs(doc.tables[inc], doc.tables[bal])
+            try:
+                mapper = ClaudeMapper.from_env()
+                with st.spinner(f"Mapping {len(inputs)} rows with Claude…"):
+                    result = mapper.map(inputs)
+                _store(result)
+            except MissingAPIKeyError as exc:
+                st.error(str(exc))
+                return
+            except MappingError as exc:
+                st.error(f"Mapping failed: {exc}")
+                details = getattr(exc, "details", None)
+                if details:
+                    st.code("\n".join(details))
+                return
+        elif run_demo:
+            _run_demo()
+    else:
+        st.warning(
+            "**Live Claude mapping requires ANTHROPIC_API_KEY.** You can still "
+            "use Demo Mode.\n\nTo enable live AI mapping later, set the key "
+            "(read from the environment only; never stored or committed):\n"
+            "```bash\nexport ANTHROPIC_API_KEY=\"sk-ant-...\"\n```"
+        )
+        if st.button("Use Demo Mapping", type="primary"):
+            _run_demo()
 
     result = st.session_state.get("mapping_result")
     review: Optional[ReviewState] = st.session_state.get("review_state")
     if result is None or review is None:
         return
 
-    if result.fallback_used:
+    if result.is_demo:
+        st.info(
+            "🧪 **Demo mapping — deterministic sample output, not AI-generated.** "
+            "No Claude call was made. Everything downstream (values, calculations, "
+            "validations, Excel) is the real deterministic pipeline. Set "
+            "`ANTHROPIC_API_KEY` to use live Claude mapping instead."
+        )
+    elif result.fallback_used:
         st.warning(
             f"⚠️ Fallback used: the primary model `{result.primary_model}` was "
             f"unavailable, so this mapping was produced by the fallback model "
